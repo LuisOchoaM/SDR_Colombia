@@ -1,11 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# ## Implememtació de ventaneo  - SDR
-
-# In[1]:
-
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -50,6 +42,8 @@ import threading
 import time
 import numpy as np
 import pandas as pd
+import matplotlib
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from tkinter.filedialog import askopenfilename
 
@@ -129,41 +123,45 @@ class DataGNU(gr.top_block, Qt.QWidget):
                     
                     #Se define el eje de las frecuencias, con respecto a la frecuencia central y el ancho de banda.
                     x_f = np.linspace(self.frec_val-(self.Bw//2),self.frec_val+(self.Bw//2),self.nfft) 
-                    
+                    x_f_mhz = x_f / 1e6 # Convertir Hz a MHz
+
                     # Crear un arreglo para almacenar las mediciones
                     mediciones = []
-                    # Tomar las mediciones
+                    # Tomar las mediciones varias mdeciones de 2 segundos aproximadamente
                     colores = ['g', 'y', 'r', 'c', 'orange'] # lista de colores
                     for i in range (5):
                         medicion = self.blocks_probe.level() #Se gurdan los datos en el vector sint
                         mediciones.append(medicion)
                         
                         #plot
-                        plt.plot(x_f, medicion, color=colores[i], label=f"Espectro_Signal {i+1}")  #plot(x_f, y_FTT) 
+                        plt.plot(x_f_mhz, medicion, color=colores[i], label=f"Espectro_Signal {i+1}")  #plot(x_f, y_FTT) 
                         print(len(medicion))
                         time.sleep(2)
                     
                     #plt.close()
-                    plt.savefig(f"Espectroooo.png")
+
                     # Sumar las sublistas punto a punto
                     suma = [sum(x) for x in zip(*mediciones)]
                     # Calcular el promedio de la suma
                     sint = [x / len(mediciones) for x in suma] #Señal Promedio
                     
-                    plt.plot(x_f, sint, color='b', label=f"Espectro_Signal_Promedio")  #plot(x_f, y_FTT) 
+                    plt.plot(x_f_mhz, sint, color='b', label=f"Espectro_Signal_Promedio")  #plot(x_f, y_FTT) 
                     plt.ylim([-100,-50])   #Escala eje Y
-                    plt.xlabel('Frequency [Hz]')
-                    plt.ylabel('Power [dBm]')
+                    plt.xlabel('Frecuencia [MHz]', fontsize=15)
+                    plt.ylabel('Potencia [dBm]', fontsize=15)
+                    plt.xticks(fontsize=14)   #Permite cambiar el tamaño de la fuente del eje X
+                    plt.yticks(fontsize=14)
                     plt.legend(loc = "upper right") #leyendas
                     plt.grid()
                     plt.rcParams["figure.figsize"] = (14, 10) #tamano de la grafica
                     plt.savefig(f"Espectro_Prom.png")
                     
                     ventana=30 #Tamaño de la ventana
-                    overlap=0 #Size del solapamiento
+                    overlap=0  #Tamaño del solapamiento
                     size_ventana=0    #A partir de esta longitud se toma la nueva ventana en cada iteraccíon 
+                    vect_ocupacion = []       #vector de ocupacón
                     umbral_spectrum=np.mean(sint) + 5 #Potencia promedio del especteo más 5 dB por encima del piso del ruido como lo recomienda la ITU 
-                    Delta=self.Bw/(1e3*self.nfft) #en KHz
+                    Delta=self.Bw/(1e3*self.nfft) #separación entre cada punto de la FFT en KHz
                     
                     #Ptencia promedio del ruido en todo el espectro:  -86.20302343554795  (dBm)
                     
@@ -188,10 +186,11 @@ class DataGNU(gr.top_block, Qt.QWidget):
                         if size_ventana==0:
                             ventanas= sint[0:ventana] #se toma el primer segmento de ventana sin traslape
                             vect_frecuencias=x_f[0:ventana]
+                            umbral=np.mean(ventanas) + 4 #Potencia promedio de las ventanas más 4 dB
+                            vect_ocupacion = [0 if punto < umbral else 1 for punto in ventanas]    #Se mira cuantos puntos estan por encima del umbral "1" y cuantos no "0"
+                            num_ventana.append(i)        #se obtine el # de la ventana y se agrga a una lista
+                            
                             #se agrega al Dataframe las potencias que superen un umbral definido.
-                            umbral=np.mean(ventanas) + 4 #Potencia promedio de las ventanas más 5 dB
-                            diff_umbral.append(umbral - umbral_spectrum)     #se gurda la diferencia entre umbral estatico definido y el umbral dinamico en cada  ventana
-                            num_ventana.append(i)                            #se obtine el # de la ventana y se agrga a una lista
                             if (np.max(ventanas)>=umbral):
                                 datos.append(i)
                                 datos.append(np.mean(ventanas))                         #Potencia promedio
@@ -223,12 +222,12 @@ class DataGNU(gr.top_block, Qt.QWidget):
                         elif(len(sint[size_ventana:size_ventana + ventana])==ventana and (size_ventana+ventana)<len(sint)-1):
                             ventanas= sint[size_ventana:size_ventana + ventana] #se toma el segmento de ventana con traslape
                             vect_frecuencias=x_f[size_ventana:size_ventana + ventana]
-                            
+                            umbral=np.mean(ventanas) + 4 #Potencia promedio de las ventanas más 4 dB
+                            vect_ocupacion += [0 if punto < umbral else 1 for punto in ventanas]    #Se mira cuantos puntos estan por encima del umbral "1" y cuantos no "0"
+
                             #se cuentan las frecuencias repetidas
                             if vect_frecuencias[ventanas.index(np.max(ventanas))] not in frecuencias:
                                 #se agrega al Dataframe las potencias que superen un umbral definido.
-                                umbral=np.mean(ventanas) + 4 #Potencia promedio de las ventanas más 5 dB
-                                diff_umbral.append(umbral - umbral_spectrum) # se calcula la diferencia entre umbral constante y dinamico
                                 num_ventana.append(i)            
                                 if (np.max(ventanas)>=umbral):
                                     datos=[]
@@ -256,23 +255,22 @@ class DataGNU(gr.top_block, Qt.QWidget):
                                     plt.show()
 
                             else:
-                                datos[0]=i   #las ventanas repetidas  tambien se enúmeran
-                                datos[-1]+=1 #se cuentan los valores de potencia repetidas
+                                datos[0]=i   #las ventanas repetidas  tambien se enúmeran para poder mantener el orden
+                                datos[-1]+=1 #se cuentan los valores de potencia maximo repetidos
 
                             i+=1
                             size_ventana+=ventana-overlap
-
-                            
+ 
                         elif(size_ventana<len(sint)-1):     #si las mustras que faltan es menor a tamaño de la ventana se grafican a parte
                             ventanas= sint[size_ventana:len(sint)]
                             vect_frecuencias=x_f[size_ventana:len(sint)]
-                            
+                            umbral=np.mean(ventanas) + 4 #Potencia promedio de las ventanas más 4 dB  
+                            vect_ocupacion += [0 if punto < umbral else 1 for punto in ventanas]    #Se mira cuantos puntos estan por encima del umbral "1" y cuantos no "0"
+
                             #se cuentan las frecuencias repetidas
                             if vect_frecuencias[ventanas.index(np.max(ventanas))] not in frecuencias:
-                                #se agrega al Dataframe las potencias que superen un umbral definido.
-                                umbral=np.mean(ventanas) + 4 #Potencia promedio de las ventanas más 5 dB 
-                                diff_umbral.append(umbral - umbral_spectrum)  
                                 num_ventana.append(i) #se obtine el # de la ventana y se agrga a una lista
+                                #se agrega al Dataframe las potencias que superen un umbral definido.
                                 if (np.max(ventanas)>=umbral):
                                     datos=[]
                                     datos.append(i)
@@ -282,8 +280,8 @@ class DataGNU(gr.top_block, Qt.QWidget):
                                     datos.append(np.max(ventanas))
                                     datos.append(vect_frecuencias[ventanas.index(np.max(ventanas))]) #se obtiene la frecuencia que corresponde al maximo
                                     datos.append(0)     #para conservar el tamaño de la lista y poder agregarla al dataFrame
-                                    dataFrame.append(datos)
                                     frecuencias.append(vect_frecuencias[ventanas.index(np.max(ventanas))]) #también se gurdar las frecuencias en un lista a parte
+                                    dataFrame.append(datos)
 
                                     plt.figure(figsize=(7,3))   
                                     plt.scatter(vect_frecuencias[ventanas.index(np.max(ventanas))],np.max(ventanas),color="r",marker="v",label = "P_Máxima") #se grafica el punto maximo de potencia
@@ -302,9 +300,7 @@ class DataGNU(gr.top_block, Qt.QWidget):
                                 datos[-1]+=1
 
                             size_ventana=len(sint)
-                            
-
-                             
+                                      
                     #Se crea el DataFrame        
                     columnas = ['#Ventana','P_Promedio (dBm)','Umbral (dBm)',"P_Acumulada (dBm)", 'P_Maxima (dBm)','Frecuencia (Hz)','#Repeticiones']
                     df = pd.DataFrame(dataFrame, columns=columnas)
@@ -369,44 +365,40 @@ class DataGNU(gr.top_block, Qt.QWidget):
                     for i, (x,y) in enumerate(zip(df['Frecuencia (Hz)'], df['P_Maxima (dBm)'])):
                         plt.annotate(f"{i+1}", (x,y))
 
-
-                    # Graficar los puntos de frecuencia en el eje x con una altura de cero en el eje y
                     
-                    #plt.axhline(np.mean(df['P_Promedio (dBm)']),color='k', linestyle='--',label = "P_Promedio_Ventanas")   #se grafica el promedio de todas las potencias promedios de cada ventana
                     plt.axhline(np.mean(sint),color='k', linestyle='--',label = "P_Promedio")   #se grafica el promedio de la potencia de toda la señal
                     plt.axhline(np.mean(df['P_Maxima (dBm)']),color='g', linestyle='--',label = "P_Máxima_Promedio")   #se grafica el promedio de la potencia maxima de cada ventana
-                    #plt.scatter(df['Frecuencia (Hz)'], ceros, color="r", marker="v", label="Frecuencias")
                     plt.scatter(df['Frecuencia (Hz)'],df['P_Maxima (dBm)'],color="r",marker="v",label = "P_Detectada")
-                    #plt.scatter(x_f[sint.index(np.max(sint))],np.max(sint),color="r",marker="v",label = "P_Máxima") #se grafica el punto maximo de potencia
                     plt.plot(x_f,sint,color='b',label = "Espectro_Signal")  #plot(x_f, y_FTT) 
-                    #plt.axhline(np.mean(df['P_Maxima (dBm)']) + np.sqrt(df['P_Maxima (dBm)'].var()),color='y', linestyle='--',label = "Desv_Estandar")   #se grafica el promedio de la potencia maxima de cada ventana
-                    #plt.axhline(np.mean(df['P_Maxima (dBm)']) - np.sqrt(df['P_Maxima (dBm)'].var()),color='y', linestyle='--')   #se grafica el promedio de la potencia maxima de cada ventana
                     #plt.axhline(umbral ,color='r', linestyle='--',label = "Umbral") #Umbral
                 
                     plt.ylim([y_min,y_max])   #Escala eje Y
-                    plt.xlabel('Frequency [Hz]')
-                    plt.ylabel('Power [dBm]')
+                    plt.xlabel('Frecuencia [MHz]', fontsize=15)
+                    plt.ylabel('Potencia [dBm]', fontsize=15)
+                    plt.xticks(fontsize=14)   #Permite cambiar el tamaño de la fuente del eje X
+                    plt.yticks(fontsize=14)
                     plt.legend(loc = "upper right",ncol=2) #leyendas
                     plt.grid()
                     #plt.show()
                     
-                    #Se genener una imagen.jpg del espectro
-                    plt.savefig("Espectro.png")
+                    #Se genener una imagen.png del espectro
+                    plt.savefig("Espectro_Detect.png")
                     
                     #Se genera un .csv,HTML del DataFrame y se imprime en pantalla el DataFrame
-                    df.to_csv('datos.csv', index=False) #
-                    df.to_html('/home/luis/Grupo de Investigación GITA/Notebook Jupyter/DataFrame.html')
+                    #df.to_csv('datos.csv', index=False) #
+                    #df.to_html('/home/luis/Grupo de Investigación GITA/Notebook Jupyter/DataFrame.html')
                     print(df)
-                    
-                    break  #Como la fuente es un archivo y no el USRP solo se ejecuta una vez el ciclo while
+                    print("\n longitud vector de ocupación: ",len(vect_ocupacion),"\n") #se imprime el vector de unos y ceros
+                    print(vect_ocupacion) #se imprime el vector de unos y ceros
+                    return  #Como la fuente es un archivo y no el USRP solo se ejecuta una vez el ciclo while
                 try:
                   try:
-                    self.doc.add_next_tick_callback(functools.partial(self.set_variable_function,val))
+                    self.doc.add_next_tick_callback(functools.partial(self.set_variable_function,sint1))
                   except AttributeError:
-                    self.set_variable_function(val)
+                    self.set_variable_function(sint1)
                 except AttributeError:
                   pass
-                time.sleep(5) #Se inicia la lectura de datos depsues de varios segundos.
+                time.sleep(7) #Se inicia la lectura de datos depsues de varios segundos.
                 
         _variable_function_thread = threading.Thread(target=_variable_function_probe)
         _variable_function_thread.daemon = True
@@ -514,10 +506,3 @@ def main(top_block_cls=DataGNU, options=None):
 
 if __name__ == '__main__':
     main()
-
-
-# In[ ]:
-
-
-
-
