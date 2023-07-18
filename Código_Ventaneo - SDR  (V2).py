@@ -43,7 +43,7 @@ import time
 import numpy as np
 import pandas as pd
 import matplotlib
-#matplotlib.use('Agg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from tkinter.filedialog import askopenfilename
 
@@ -94,6 +94,13 @@ class DataGNU(gr.top_block, Qt.QWidget):
         self.Average = Average = 0.05
         self.frec_val = self.Frecuencia  #Frecuencia central
         self.Bw = 40e6             #Ancho de banda
+        ## Varibles adicionales
+        self.window=30 #Tamaño de la ventana
+        self.overlaping=0  #Tamaño del solapamiento
+        self.windows_size=0    #A partir de esta longitud se toma la nueva ventana en cada iteraccíon 
+        self.ocup_vect = []       #vector de ocupacón
+        #self.umbral_spectrum=np.mean(sint) + 5 #Potencia promedio del especteo más 5 dB por encima del piso del ruido como lo recomienda la ITU 
+        #self.Delta=self.Bw/(1e3*self.nfft) #separación entre cada punto de la FFT en KHz
 
 
         ##################################################
@@ -156,10 +163,10 @@ class DataGNU(gr.top_block, Qt.QWidget):
                     plt.rcParams["figure.figsize"] = (14, 10) #tamano de la grafica
                     plt.savefig(f"Espectro_Prom.png")
                     
-                    ventana=30 #Tamaño de la ventana
-                    overlap=0  #Tamaño del solapamiento
-                    size_ventana=0    #A partir de esta longitud se toma la nueva ventana en cada iteraccíon 
-                    vect_ocupacion = []       #vector de ocupacón
+                    ventana=self.window #Tamaño de la ventana
+                    overlap=self.overlaping  #Tamaño del solapamiento
+                    size_ventana=self.windows_size    #A partir de esta longitud se toma la nueva ventana en cada iteraccíon 
+                    vect_ocupacion = self.ocup_vect       #vector de ocupacón
                     umbral_spectrum=np.mean(sint) + 5 #Potencia promedio del especteo más 5 dB por encima del piso del ruido como lo recomienda la ITU 
                     Delta=self.Bw/(1e3*self.nfft) #separación entre cada punto de la FFT en KHz
                     
@@ -390,6 +397,7 @@ class DataGNU(gr.top_block, Qt.QWidget):
                     print(df)
                     print("\n longitud vector de ocupación: ",len(vect_ocupacion),"\n") #se imprime el vector de unos y ceros
                     print(vect_ocupacion) #se imprime el vector de unos y ceros
+                    print(frecuencias)
                     return  #Como la fuente es un archivo y no el USRP solo se ejecuta una vez el ciclo while
                 try:
                   try:
@@ -398,13 +406,13 @@ class DataGNU(gr.top_block, Qt.QWidget):
                     self.set_variable_function(sint1)
                 except AttributeError:
                   pass
-                time.sleep(7) #Se inicia la lectura de datos depsues de varios segundos.
+                time.sleep(2) #Se inicia la lectura de datos depsues de varios segundos.
                 
         _variable_function_thread = threading.Thread(target=_variable_function_probe)
         _variable_function_thread.daemon = True
         _variable_function_thread.start()
 
-
+        
         self.qtgui_vector_sink_f_0.set_update_time(0.10)
         self.qtgui_vector_sink_f_0.set_y_axis((-140), 10)
         self.qtgui_vector_sink_f_0.enable_autoscale(False)
@@ -447,8 +455,10 @@ class DataGNU(gr.top_block, Qt.QWidget):
         ##################################################
         # Ruta del archivo
         ##################################################
-        filename =askopenfilename() # show an "Open" dialog box and return
-        self.blocks_file_source_0 = blocks.file_source(gr.sizeof_gr_complex*1, filename, True, 0, 0)
+        #filename =askopenfilename() # show an "Open" dialog box and return
+        filename = "/home/hfsdr/Documents/CRC/banda_fm.dat"
+        #self.blocks_file_source_0 = blocks.file_source(gr.sizeof_gr_complex*1, filename, True, 0, 0) # Repite infinito
+        self.blocks_file_source_0 = blocks.file_source(gr.sizeof_gr_complex*1, filename, False, 0, 0) # no repite
         self.blocks_file_source_0.set_begin_tag(pmt.PMT_NIL)
 
         ##################################################
